@@ -1,0 +1,21 @@
+{
+  "name": "deploy-service",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "node -e 'process.exit(0)'"
+  },
+  "dependencies": {
+    "fastify": "^4.28.1",
+    "@fastify/cors": "^9.0.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}
