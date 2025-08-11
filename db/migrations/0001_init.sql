@@ -94,6 +94,7 @@ create table if not exists domains (
   hostname text not null,
   type text not null check (type in ('default','custom')),
   verification_cname text,
+  verification_status text not null default 'pending' check (verification_status in ('pending','verified','failed')),
   verified_at timestamptz,
   health_status text not null default 'unknown' check (health_status in ('unknown','healthy','degraded','down'))
 );
@@ -105,6 +106,8 @@ create table if not exists certs (
   not_before timestamptz not null,
   not_after timestamptz not null,
   status text not null,
+  acme_challenge text,
+  acme_type text check (acme_type in ('http-01','dns-01')),
   renewal_attempts int not null default 0
 );
 
