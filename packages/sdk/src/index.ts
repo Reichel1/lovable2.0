@@ -33,4 +33,27 @@ export class PlatformClient {
   health(): Promise<{ status: 'ok' }> {
     return this.request('/health');
   }
+
+  // Console-web helpers (assumes same-origin proxy)
+  getProjects(): Promise<any[]> {
+    return this.request('/projects');
+  }
+  createProject(body: { name: string; orgId: string; runtimeType: 'static'|'edge'|'container'; region: string }): Promise<any> {
+    return this.request('/projects', { method: 'POST', body: JSON.stringify(body) });
+  }
+  getProjectBuilds(projectId: string): Promise<any[]> {
+    return this.request(`/projects/${projectId}/builds`);
+  }
+  getDeployments(): Promise<any[]> {
+    return this.request('/deployments');
+  }
+  startBuild(body: { projectId: string; projectSlug: string; repoSlug: string; gitRef: string }): Promise<any> {
+    return this.request('/builds:start', { method: 'POST', body: JSON.stringify(body) });
+  }
+  listDomains(projectId: string): Promise<any[]> {
+    return this.request(`/projects/${projectId}/domains`);
+  }
+  verifyDomain(id: string): Promise<any> {
+    return this.request(`/domains/${id}/verify`);
+  }
 }

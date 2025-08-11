@@ -23,8 +23,22 @@ app.get('/openapi.json', async () => app.swagger());
 const ProjectCreate = z.object({ name: z.string().min(1), orgId: z.string().uuid(), runtimeType: z.enum(['static','edge','container']), region: z.string() });
 
 app.get('/projects', async () => {
-  const { rows } = await pool.query('select id, org_id as "orgId", name, runtime_type as "runtimeType", region from projects order by created_at desc limit 100');
-  return rows;
+  const { rows } = await pool.query(`
+    select p.id,
+           p.org_id as "orgId",
+           p.name,
+           p.runtime_type as "runtimeType",
+           p.region,
+           (select b.status from builds b where b.project_id=p.id order by b.created_at desc limit 1) as "latestBuildStatus",
+           (select b.artifact_manifest_url from builds b where b.project_id=p.id and b.status='succeeded' order by b.created_at desc limit 1) as "latestArtifactManifestUrl"
+      from projects p
+     order by p.created_at desc
+     limit 100
+  `);
+  return rows.map((r: any) => ({
+    ...r,
+    latestPreviewUrl: r.latestArtifactManifestUrl ? r.latestArtifactManifestUrl.replace(/\/manifest\.json$/, '') : null,
+  }));
 });
 
 app.post('/projects', async (req, reply) => {
@@ -39,7 +53,21 @@ app.post('/projects', async (req, reply) => {
 app.get('/projects/:id/builds', async (req) => {
   const projectId = (req.params as any).id as string;
   const { rows } = await pool.query(
-    'select id, project_id as "projectId", git_ref as "gitRef", status, logs_url as "logsUrl", artifact_manifest_url as "artifactManifestUrl" from builds where project_id = $1 order by created_at desc limit 50',
+    'select id, project_id as "projectId", git_ref as "gitRef", status, logs_url as "logsUrl", artifact_manifest_url as "artifactManifestUrl", created_at as "createdAt", finished_at as "finishedAt", error_message as "errorMessage" from builds where project_id = $1 order by created_at desc limit 50',
+    [projectId]
+  );
+  return rows;
+});
+
+// Domains by project
+app.get('/projects/:id/domains', async (req) => {
+  const projectId = (req.params as any).id as string;
+  const { rows } = await pool.query(
+    `select d.id, d.hostname, d.verification_status as "verificationStatus", d.verification_cname as "verificationCname"
+       from domains d
+       join environments e on e.id = d.env_id
+      where e.project_id = $1
+      order by d.hostname asc`,
     [projectId]
   );
   return rows;

@@ -1,19 +1,27 @@
-export default async function ProjectsPage() {
-  // Placeholder static list; wire to API later
-  const projects = [] as { id: string; name: string; runtimeType: string; previewUrl?: string }[];
+'use client';
+import { useQuery } from '@tanstack/react-query';
+import { PlatformClient } from '@platform/sdk';
+
+export default function ProjectsPage() {
+  const client = new PlatformClient({ baseUrl: '/api' });
+  const { data, isLoading, error } = useQuery({ queryKey: ['projects'], queryFn: () => client.getProjects() });
+  if (isLoading) return <div className="p-6">Loading…</div>;
+  if (error) return <div className="p-6 text-red-600">Failed to load projects</div>;
   return (
-    <div style={{ padding: 24 }}>
-      <h1>Projects</h1>
-      <table>
-        <thead>
-          <tr><th>Name</th><th>Type</th><th>Preview</th></tr>
-        </thead>
+    <div className="p-6 space-y-4">
+      <h1 className="text-xl font-semibold">Projects</h1>
+      <table className="w-full text-sm">
+        <thead><tr className="text-left"><th>Name</th><th>Type</th><th>Preview</th></tr></thead>
         <tbody>
-          {projects.map((p) => (
-            <tr key={p.id}>
+          {data.map((p: any) => (
+            <tr key={p.id} className="border-t">
               <td>{p.name}</td>
-              <td>{p.runtimeType}</td>
-              <td>{p.previewUrl ? <a href={p.previewUrl} target="_blank">Open</a> : '-'}</td>
+              <td className="uppercase">{p.runtimeType}</td>
+              <td>
+                {p.latestPreviewUrl ? (
+                  <a className="underline" href={p.latestPreviewUrl} target="_blank">Open</a>
+                ) : '—'}
+              </td>
             </tr>
           ))}
         </tbody>
