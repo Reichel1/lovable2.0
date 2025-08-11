@@ -1,0 +1,16 @@
+{
+  "name": "preview-ingress",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run",
+    "lint": "eslint .",
+    "test": "node -e 'process.exit(0)'"
+  },
+  "devDependencies": {
+    "wrangler": "^3.69.1",
+    "typescript": "^5.5.4"
+  }
+}
