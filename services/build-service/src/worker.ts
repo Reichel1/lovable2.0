@@ -6,6 +6,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
+import { updateBuildFailure, updateBuildSuccess } from './db';
 
 const r2 = new S3Client({
   region: 'auto',
@@ -78,42 +79,61 @@ export const worker = new Worker<BuildJobData>('builds', async (job) => {
   let logs = '';
   const log = (s: string) => { logs += s; };
 
-  await git.clone(repoUrl, tmp, ['--depth=1']);
-  await git.cwd({ path: tmp, root: false }).checkout(gitRef);
+  try {
+    await git.clone(repoUrl, tmp, ['--depth=1']);
+    await git.cwd({ path: tmp, root: false }).checkout(gitRef);
 
-  const { outDir, commands } = await detectBuild(tmp);
-  for (const [cmd, args] of commands) {
-    await run(cmd, args, tmp, log);
-  }
+    const { outDir, commands } = await detectBuild(tmp);
+    for (const [cmd, args] of commands) {
+      await run(cmd, args, tmp, log);
+    }
 
-  // Upload artifacts
-  const baseKey = `${projectSlug}/${buildId}`;
-  for await (const file of walk(path.join(tmp, outDir))) {
-    const key = `${baseKey}/${rel(path.join(tmp, outDir), file)}`;
-    const body = await fs.readFile(file);
+    // Upload artifacts
+    const baseKey = `${projectSlug}/${buildId}`;
+    for await (const file of walk(path.join(tmp, outDir))) {
+      const key = `${baseKey}/${rel(path.join(tmp, outDir), file)}`;
+      const body = await fs.readFile(file);
+      await r2.send(new PutObjectCommand({
+        Bucket: process.env.CF_R2_BUCKET,
+        Key: key,
+        Body: body,
+        ContentType: contentTypeFor(file),
+        CacheControl: /\.(?:css|js|png|jpg|jpeg|svg|webp|ico)$/.test(file) ? 'public, max-age=31536000, immutable' : 'public, max-age=60, s-maxage=600',
+      }));
+    }
+
+    const manifestKey = `${baseKey}/manifest.json`;
+    const manifestUrl = `${process.env.CF_R2_PUBLIC_BASE?.replace(/\/$/, '')}/${manifestKey}`;
     await r2.send(new PutObjectCommand({
       Bucket: process.env.CF_R2_BUCKET,
-      Key: key,
-      Body: body,
-      ContentType: contentTypeFor(file),
-      CacheControl: /\.(?:css|js|png|jpg|jpeg|svg|webp|ico)$/.test(file) ? 'public, max-age=31536000, immutable' : 'public, max-age=60, s-maxage=600',
+      Key: manifestKey,
+      Body: JSON.stringify({ id: buildId, outDir }),
+      ContentType: 'application/json',
     }));
+
+    const logsKey = `${baseKey}/build.log`;
+    const logsUrl = `${process.env.CF_R2_PUBLIC_BASE?.replace(/\/$/, '')}/${logsKey}`;
+    await r2.send(new PutObjectCommand({
+      Bucket: process.env.CF_R2_BUCKET,
+      Key: logsKey,
+      Body: logs,
+      ContentType: 'text/plain; charset=utf-8',
+    }));
+
+    await updateBuildSuccess(buildId, manifestUrl, logsUrl);
+  } catch (err: any) {
+    const baseKey = `${projectSlug}/${buildId}`;
+    const logsKey = `${baseKey}/build.log`;
+    const logsUrl = `${process.env.CF_R2_PUBLIC_BASE?.replace(/\/$/, '')}/${logsKey}`;
+    // attempt to upload whatever logs we have
+    try {
+      await r2.send(new PutObjectCommand({
+        Bucket: process.env.CF_R2_BUCKET,
+        Key: logsKey,
+        Body: logs + `\nERROR: ${err?.message || String(err)}`,
+        ContentType: 'text/plain; charset=utf-8',
+      }));
+    } catch {}
+    await updateBuildFailure(buildId, err?.message || 'build failed', logsUrl);
   }
-
-  const manifest = JSON.stringify({ id: buildId, outDir });
-  await r2.send(new PutObjectCommand({
-    Bucket: process.env.CF_R2_BUCKET,
-    Key: `${baseKey}/manifest.json`,
-    Body: manifest,
-    ContentType: 'application/json',
-  }));
-
-  await r2.send(new PutObjectCommand({
-    Bucket: process.env.CF_R2_BUCKET,
-    Key: `${baseKey}/build.log`,
-    Body: logs,
-    ContentType: 'text/plain; charset=utf-8',
-  }));
-
-  // TODO: update DB row with success and URLs
 }, { connection: redis });

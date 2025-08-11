@@ -61,7 +61,9 @@ create table if not exists builds (
   logs_url text,
   artifact_manifest_url text,
   created_by uuid references users(id),
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  finished_at timestamptz,
+  error_message text
 );
 
 create table if not exists artifacts (
