@@ -4,9 +4,12 @@ import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import { z } from 'zod';
 import pg from 'pg';
+import { Queue } from 'bullmq';
+import IORedis from 'ioredis';
 import crypto from 'node:crypto';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const buildQueue = new Queue('builds', { connection: { url: process.env.REDIS_URL ?? 'redis://localhost:6379' } });
 
 const app = Fastify({ logger: true });
 
@@ -97,6 +100,27 @@ app.get('/deployments', async () => {
   return rows;
 });
 
+// Enqueue build from API
+const StartBuildInput = z.object({ projectId: z.string().uuid(), projectSlug: z.string(), repoSlug: z.string(), gitRef: z.string().default('main') });
+app.post('/builds:start', async (req, reply) => {
+  const input = StartBuildInput.parse(req.body);
+  const buildId = crypto.randomUUID();
+  await pool.query('insert into builds (id, project_id, git_ref, status, created_at) values ($1,$2,$3,$4,now())', [
+    buildId,
+    input.projectId,
+    input.gitRef,
+    'queued',
+  ]);
+  await buildQueue.add('build', {
+    buildId,
+    projectId: input.projectId,
+    projectSlug: input.projectSlug,
+    repoSlug: input.repoSlug,
+    gitRef: input.gitRef,
+  });
+  return reply.code(202).send({ id: buildId, status: 'queued' });
+});
+
 // Domain foundations
 const DomainCreate = z.object({ envId: z.string().uuid(), hostname: z.string(), type: z.enum(['default','custom']).default('custom') });
 app.post('/domains', async (req, reply) => {
@@ -113,13 +137,20 @@ app.post('/domains', async (req, reply) => {
 // Domain verification: checks CF DNS
 app.get('/domains/:id/verify', async (req) => {
   const id = (req.params as any).id as string;
-  const { rows } = await pool.query('select id, hostname, verification_cname from domains where id=$1', [id]);
+  const { rows } = await pool.query('select d.id, d.hostname, d.verification_cname, o.id as zone_id from domains d join environments e on e.id=d.env_id join projects p on p.id=e.project_id join orgs o on true where d.id=$1', [id]);
   if (rows.length === 0) return { status: 'not_found' };
   const domain = rows[0] as { id: string; hostname: string; verification_cname: string };
-  // Placeholder: in real code call Cloudflare API and compare
-  // For now, mark verified to unblock flow
-  await pool.query('update domains set verification_status=$1, verified_at=now() where id=$2', ['verified', id]);
-  return { status: 'verified' };
+  const zoneId = process.env.CLOUDFLARE_ZONE_ID!;
+  const res = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records?type=CNAME&name=${encodeURIComponent(domain.hostname)}`, {
+    headers: { Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` },
+  });
+  const json: any = await res.json();
+  const content = json?.result?.[0]?.content as string | undefined;
+  if (content && domain.verification_cname && content.includes(domain.verification_cname)) {
+    await pool.query('update domains set verification_status=$1, verified_at=now() where id=$2', ['verified', id]);
+    return { status: 'verified' };
+  }
+  return { status: 'pending' };
 });
 
 const port = Number(process.env.PORT ?? 3001);

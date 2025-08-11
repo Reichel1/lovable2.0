@@ -10,6 +10,9 @@ export default function ProjectsPage() {
   return (
     <div className="p-6 space-y-4">
       <h1 className="text-xl font-semibold">Projects</h1>
+      <div>
+        <a className="border px-2 py-1 rounded" href="/projects/new">New project</a>
+      </div>
       <table className="w-full text-sm">
         <thead><tr className="text-left"><th>Name</th><th>Type</th><th>Preview</th></tr></thead>
         <tbody>
