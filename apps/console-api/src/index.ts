@@ -36,8 +36,11 @@ app.get('/projects', async () => {
      limit 100
   `);
   return rows.map((r: any) => ({
-    ...r,
-    latestPreviewUrl: r.latestArtifactManifestUrl ? r.latestArtifactManifestUrl.replace(/\/manifest\.json$/, '') : null,
+    id: r.id,
+    name: r.name,
+    runtime_type: r.runtimeType,
+    latest_build_status: r.latestBuildStatus,
+    latest_preview_url: r.latestArtifactManifestUrl ? r.latestArtifactManifestUrl.replace(/\/manifest\.json$/, '') : null,
   }));
 });
 
@@ -53,10 +56,19 @@ app.post('/projects', async (req, reply) => {
 app.get('/projects/:id/builds', async (req) => {
   const projectId = (req.params as any).id as string;
   const { rows } = await pool.query(
-    'select id, project_id as "projectId", git_ref as "gitRef", status, logs_url as "logsUrl", artifact_manifest_url as "artifactManifestUrl", created_at as "createdAt", finished_at as "finishedAt", error_message as "errorMessage" from builds where project_id = $1 order by created_at desc limit 50',
+    'select id, status, branch, pr_number as "prNumber", created_at as "createdAt", finished_at as "finishedAt", artifact_manifest_url as "artifactManifestUrl", logs_url as "logsUrl" from builds where project_id = $1 order by created_at desc limit 50',
     [projectId]
   );
-  return rows;
+  return rows.map((r: any) => ({
+    id: r.id,
+    status: r.status,
+    branch: r.branch,
+    pr_number: r.prNumber,
+    created_at: r.createdAt,
+    finished_at: r.finishedAt,
+    artifact_manifest_url: r.artifactManifestUrl,
+    logs_url: r.logsUrl,
+  }));
 });
 
 // Domains by project
@@ -70,7 +82,12 @@ app.get('/projects/:id/domains', async (req) => {
       order by d.hostname asc`,
     [projectId]
   );
-  return rows;
+  return rows.map((r: any) => ({
+    id: r.id,
+    hostname: r.hostname,
+    verification_status: r.verificationStatus,
+    verification_cname: r.verificationCname,
+  }));
 });
 
 app.get('/deployments', async () => {
