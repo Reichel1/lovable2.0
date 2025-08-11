@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "framework": "nextjs",
+  "buildCommand": "pnpm install -g pnpm@8.15.4 && pnpm install && pnpm --filter console-web... build",
+  "devCommand": "pnpm dev",
+  "installCommand": "pnpm install -g pnpm@8.15.4 && pnpm install",
+  "outputDirectory": "apps/console-web/.next",
+  "rootDirectory": "."
+}

@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "buildCommand": "pnpm install -g pnpm@8.15.4 && pnpm install && pnpm build",
+  "installCommand": "pnpm install -g pnpm@8.15.4 && pnpm install",
+  "outputDirectory": ".next",
+  "framework": "nextjs"
+}
