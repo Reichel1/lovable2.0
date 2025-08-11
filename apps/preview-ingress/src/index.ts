@@ -25,14 +25,17 @@ export default {
     const key = `${project}/${prMatch[1]}${path}`.replace(/\/+/, '/');
 
     // Try direct object
-    const object = await env.PREVIEW_ARTIFACTS.get(key);
+    let object = await env.PREVIEW_ARTIFACTS.get(key);
+    // SPA fallback to /index.html
     if (!object) {
-      return notFound('Artifact not found');
+      object = await env.PREVIEW_ARTIFACTS.get(`${project}/${prMatch[1]}/index.html`);
+      if (!object) return notFound('Artifact not found');
     }
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set('etag', object.httpEtag);
-    headers.set('cache-control', 'public, max-age=60, s-maxage=600');
+    const isImmutable = /\.(?:css|js|png|jpg|jpeg|svg|webp|ico)$/.test(path);
+    headers.set('cache-control', isImmutable ? 'public, max-age=31536000, immutable' : 'public, max-age=60, s-maxage=600');
     return new Response(object.body, { headers });
   },
 };

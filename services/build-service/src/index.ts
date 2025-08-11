@@ -5,12 +5,13 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { registerGitHubWebhooks } from './webhooks';
+import { buildQueue } from './queue';
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
 registerGitHubWebhooks(app);
 
-const StartBuildInput = z.object({ projectId: z.string().uuid(), gitRef: z.string(), projectSlug: z.string().min(1) });
+const StartBuildInput = z.object({ projectId: z.string().uuid(), gitRef: z.string(), projectSlug: z.string().min(1), repoSlug: z.string().min(1) });
 
 const r2 = new S3Client({
   region: 'auto',
@@ -26,20 +27,14 @@ app.post('/builds:start', async (req, reply) => {
   // Stub: enqueue build and return id
   const id = crypto.randomUUID();
   app.log.info({ id, ...input }, 'queued build');
-  // Simulate artifact upload of manifest placeholder
-  const manifestKey = `${input.projectSlug}/${id}/manifest.json`;
-  const manifest = JSON.stringify({
-    id,
-    files: [{ path: '/index.html', hash: 'placeholder' }],
+  await buildQueue.add('build', {
+    buildId: id,
+    projectId: input.projectId,
+    projectSlug: input.projectSlug,
+    repoSlug: input.repoSlug,
+    gitRef: input.gitRef,
   });
-  await r2.send(new PutObjectCommand({
-    Bucket: process.env.CF_R2_BUCKET,
-    Key: manifestKey,
-    Body: manifest,
-    ContentType: 'application/json',
-  }));
-  const artifact_manifest_url = `${process.env.CF_R2_PUBLIC_BASE?.replace(/\/$/, '')}/${manifestKey}`;
-  return reply.send({ id, status: 'queued', artifact_manifest_url });
+  return reply.send({ id, status: 'queued' });
 });
 
 app.get('/builds/:id/logs', async (req, reply) => {
